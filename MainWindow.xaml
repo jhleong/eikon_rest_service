@@ -1,0 +1,8 @@
+﻿<Window x:Class="DailyIntervalDemo.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:dailyIntervalDemo="clr-namespace:DailyIntervalDemo"
+        Title="Time Series: daily interval" SizeToContent="WidthAndHeight"
+        Style="{StaticResource EikonFrameStyle}">
+    <dailyIntervalDemo:MainControl x:Name="uiMainControl" />
+</Window>
