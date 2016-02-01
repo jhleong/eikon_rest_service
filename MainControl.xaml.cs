@@ -40,17 +40,17 @@ namespace DailyIntervalDemo
     public class Service1 : IService1
     {
        // public ITimeSeriesDataSubscription dataSubscription { get; set; }
-        private static ITimeSeriesDataRequest dataRequest { get; set; }
+        private  ITimeSeriesDataRequest dataRequest { get; set; }
         private IMetadataRequest metadataRequest;
 
         //public string Ric { get; set; }
         //public static ObservableCollection<IBarData> Records = new ObservableCollection<IBarData>();
-        private static Collection<BarRecord> barRecCollection = new Collection<BarRecord>();
-        private static Collection<NavRecord> navRecCollection = new Collection<NavRecord>();
+        private  Collection<BarRecord> barRecCollection = new Collection<BarRecord>();
+        private  Collection<NavRecord> navRecCollection = new Collection<NavRecord>();
 
         private MetaDataRecord metaDataRec;
 
-        private static bool dataCompleted;
+        private  bool dataCompleted;
         private string view_type;
         //private readonly AutoResetEvent _signal = new AutoResetEvent(false);
 
@@ -70,12 +70,13 @@ namespace DailyIntervalDemo
         public async Task<Collection<BarRecord>> getRT_bar_data(string par_ricname, string par_interval, string par_from_date, string par_to_date)
         {
 
+            int cnt = 0;
 
             get_data_eikon(par_ricname.ToUpper(), 'e', par_interval[0], par_from_date, par_to_date);
 
             await Task.Run(() =>
             {
-                while (!dataCompleted)
+                while (!dataCompleted && cnt++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
@@ -90,11 +91,12 @@ namespace DailyIntervalDemo
             UriTemplate = "rt_nav_data/{par_ricname}/{par_type}/{par_interval}/{par_from_date}/{par_to_date}")]
         public async Task<Collection<NavRecord>> getRT_nav_data(string par_ricname, string par_type, string par_interval, string par_from_date, string par_to_date)
         {
+            int cnt = 0;
             get_data_eikon(par_ricname.ToUpper(), par_type[0], par_interval[0], par_from_date, par_to_date);
 
             await Task.Run(() =>
             {
-                while (!dataCompleted)
+                while (!dataCompleted && cnt++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
