@@ -39,18 +39,21 @@ namespace DailyIntervalDemo
 
     public class Service1 : IService1
     {
-       // public ITimeSeriesDataSubscription dataSubscription { get; set; }
-        private  ITimeSeriesDataRequest dataRequest { get; set; }
+        // public ITimeSeriesDataSubscription dataSubscription { get; set; }
+        private ITimeSeriesDataRequest dataRequest { get; set; }
         private IMetadataRequest metadataRequest;
 
         //public string Ric { get; set; }
         //public static ObservableCollection<IBarData> Records = new ObservableCollection<IBarData>();
-        private  Collection<BarRecord> barRecCollection = new Collection<BarRecord>();
-        private  Collection<NavRecord> navRecCollection = new Collection<NavRecord>();
+        private Collection<BarRecord> barRecCollection = new Collection<BarRecord>();
+        private Collection<NavRecord> navRecCollection = new Collection<NavRecord>();
 
         private MetaDataRecord metaDataRec;
 
-        private  bool dataCompleted;
+        private bool dataReqCompleted;
+        private bool metaDataReqCompleted;
+        private bool dataReqError;
+        private bool metaDataReqError;
         private string view_type;
         //private readonly AutoResetEvent _signal = new AutoResetEvent(false);
 
@@ -76,14 +79,14 @@ namespace DailyIntervalDemo
 
             await Task.Run(() =>
             {
-                while (!dataCompleted && cnt++ <= 30)
+                while (!dataReqError && !dataReqCompleted && cnt++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
             });
 
             return barRecCollection;
-            
+
         }
 
         [WebInvoke(Method = "GET",
@@ -96,7 +99,7 @@ namespace DailyIntervalDemo
 
             await Task.Run(() =>
             {
-                while (!dataCompleted && cnt++ <= 30)
+                while (!dataReqError && !dataReqCompleted && cnt++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
@@ -106,9 +109,46 @@ namespace DailyIntervalDemo
 
         }
 
+        private void SubscriptionStatusChanged(IRequestStatus status)
+        {
+
+
+            if (status.Error > 0)
+                dataReqError = true;
+
+            //switch (status.Error)
+            //{
+
+            //    case RequestErrorType.NoSuchRic:
+            //        // The specified RIC is not valid. 
+            //        break;
+            //    case RequestErrorType.NoSuchView:
+            //        // The specified RIC is not valid for this view or the view does not exist. 
+            //        break;
+
+            //    default:
+            //    case RequestErrorType.None:
+            //        // RequestErrorType.None indicates no RequestErrorType occurs. 
+            //        break;
+
+            //}
+
+            //switch (status.State)
+            //{
+            //    case RequestState.Blending:
+            //        // Request is switching from historical data to realtime continuation. 
+            //        break;
+
+            //    case RequestState.Live:
+            //        // Request is alive and may send updates. 
+            //        break;
+            //}
+        }
+
         private void get_data_eikon(string str_ricname, char chr_type, char chr_interval, string par_from_date, string par_to_date)
         {
-            dataCompleted = false;
+            dataReqCompleted = false;
+            dataReqError = false;
             barRecCollection.Clear();
             navRecCollection.Clear();
 
@@ -149,12 +189,13 @@ namespace DailyIntervalDemo
                     .WithView(this.view_type)
                     .WithInterval(interval)
                     .OnDataReceived(this.OnRestSubscriptionDataReceived)
+                    .OnStatusUpdated(this.SubscriptionStatusChanged)
                     .CreateAndSend();
 
         }
 
-    private void OnRestSubscriptionDataReceived(DataChunk chunk)
-    {
+        private void OnRestSubscriptionDataReceived(DataChunk chunk)
+        {
 
             // chunk.Records provides access to a dictionary of field -> value, so that
             // developpers can access values from field names and cast them in the proper type like in:
@@ -168,26 +209,41 @@ namespace DailyIntervalDemo
             // In this sample we know that records are typical "bar" records (open, close, high, low, volume) 
             // because we ask for a daily interval. So we can use ToBarRecords() helper method:
 
-            if (this.view_type == "TRDPRC_1") {
+            if (this.view_type == "TRDPRC_1")
+            {
                 // BarData from TDRPRC_1 view
                 foreach (IBarData record in chunk.Records.ToBarRecords())
                 {
-                    //Records.Insert(0, record);
-                    barRecCollection.Insert(0, new BarRecord(record));
+                    try
+                    {
+                        barRecCollection.Insert(0, new BarRecord(record));
+                    }
+                    catch
+                    {
+
+                    }
                 }
-            } else
+            }
+            else
             {
                 // record from BID or NAV view
                 foreach (IData record in chunk.Records)
                 {
-                    //Records.Insert(0, record);
-                    navRecCollection.Insert(0, new NavRecord(record));
+                    try
+                    {
+                        navRecCollection.Insert(0, new NavRecord(record));
+                    }
+                    catch
+                    {
+
+                    }
+
                 }
             }
 
             if (chunk.IsLast)
             {
-                dataCompleted = true;
+                dataReqCompleted = true;
             }
         }
 
@@ -197,13 +253,15 @@ namespace DailyIntervalDemo
         UriTemplate = "rt_meta_data/{par_ricname}")]
         public async Task<MetaDataRecord> getRT_meta_data(string par_ricname)
         {
-            dataCompleted = false;
+            metaDataReqCompleted = false;
+            metaDataReqError = false;
+            int metaDataTimeOut = 0;
 
-            metadataRequest = DataServices.Instance.TimeSeries.Metadata.GetCommonData(par_ricname, onRetCommonData );
+            metadataRequest = DataServices.Instance.TimeSeries.Metadata.GetCommonData(par_ricname, onRetCommonData, OnErrorCommonData);
 
             await Task.Run(() =>
             {
-                while (!dataCompleted)
+                while (!metaDataReqError && !metaDataReqCompleted && metaDataTimeOut++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
@@ -216,7 +274,12 @@ namespace DailyIntervalDemo
         private void onRetCommonData(CommonMetadata mdata)
         {
             metaDataRec = new MetaDataRecord(mdata);
-            dataCompleted = true;
+            metaDataReqCompleted = true;
+        }
+
+        private void OnErrorCommonData(TimeSeriesError error)
+        {
+            metaDataReqError = true;
         }
     }
 
@@ -342,7 +405,7 @@ namespace DailyIntervalDemo
             });
         }
 
-      
+
         // Data services consume native resources that must be disposed as soon as possible.
         // So, it's a recommended practice to dispose data request and susbcription
         // in a deterministic way, based on any kind of events indicating end of application.
