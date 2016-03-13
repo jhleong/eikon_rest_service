@@ -55,9 +55,25 @@ namespace DailyIntervalDemo
         [DataMember]
         public string ts { get; set; }
 
-        public NavRecord(IData idata)
+        public NavRecord(IData idata, string view_type)
         {
-            nav = (double)idata["VALUE"];
+            // NAV - VALUE
+            // BID - CLOSE
+            // TDRPRC_1 - CLOSE
+
+            if (view_type == "NAV")
+            {
+                nav = (double)idata["VALUE"];
+            }
+            else if (view_type == "BID")
+            {
+                nav = (double)idata["CLOSE"];
+            }
+            else if (view_type == "TDRPRC_1")
+            {
+                nav = (double)idata["CLOSE"];
+            }
+
             DateTime dt_ts = (DateTime)idata.Timestamp;
             ts = dt_ts.ToString("yyyyMMdd", System.Globalization.CultureInfo.InvariantCulture);
         }

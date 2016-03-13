@@ -29,16 +29,18 @@ namespace DailyIntervalDemo
     public interface IService1
     {
         [OperationContract]
-        Task<Collection<BarRecord>> getRT_bar_data(string par_ricname, string par_interval, string par_from_date, string par_to_date);
+        Task<Collection<BarRecord>> getRT_bar_data(string api_key, string par_ricname, string par_interval, string par_from_date, string par_to_date);
         [OperationContract]
-        Task<Collection<NavRecord>> getRT_nav_data(string par_ricname, string par_type, string par_interval, string par_from_date, string par_to_date);
+        Task<Collection<NavRecord>> getRT_nav_data(string api_key, string par_ricname, string par_type, string par_interval, string par_from_date, string par_to_date);
         [OperationContract]
-        Task<MetaDataRecord> getRT_meta_data(string par_ricname);
+        Task<MetaDataRecord> getRT_meta_data(string api_key, string par_ricname);
 
     }
 
     public class Service1 : IService1
     {
+        private static string REST_API_KEY = "1234";
+
         // public ITimeSeriesDataSubscription dataSubscription { get; set; }
         private ITimeSeriesDataRequest dataRequest { get; set; }
         private IMetadataRequest metadataRequest;
@@ -55,6 +57,7 @@ namespace DailyIntervalDemo
         private bool dataReqError;
         private bool metaDataReqError;
         private string view_type;
+        private bool no_such_view;
         //private readonly AutoResetEvent _signal = new AutoResetEvent(false);
 
 
@@ -69,13 +72,21 @@ namespace DailyIntervalDemo
 
         [WebInvoke(Method = "GET",
                     ResponseFormat = WebMessageFormat.Json,
-                    UriTemplate = "rt_bar_data/{par_ricname}/{par_interval}/{par_from_date}/{par_to_date}")]
-        public async Task<Collection<BarRecord>> getRT_bar_data(string par_ricname, string par_interval, string par_from_date, string par_to_date)
+                    UriTemplate = "rt_bar_data/{api_key}/{par_ricname}/{par_interval}/{par_from_date}/{par_to_date}")]
+        public async Task<Collection<BarRecord>> getRT_bar_data(string api_key, string par_ricname, string par_interval, string par_from_date, string par_to_date)
         {
+
+            if (api_key != REST_API_KEY)
+                return null;
+
+            dataReqCompleted = false;
+            dataReqError = false;
+            barRecCollection.Clear();
+            navRecCollection.Clear();
 
             int cnt = 0;
 
-            get_data_eikon(par_ricname.ToUpper(), 'e', par_interval[0], par_from_date, par_to_date);
+            get_data_eikon_bar(par_ricname.ToUpper(), par_interval[0], par_from_date, par_to_date);
 
             await Task.Run(() =>
             {
@@ -91,19 +102,74 @@ namespace DailyIntervalDemo
 
         [WebInvoke(Method = "GET",
             ResponseFormat = WebMessageFormat.Json,
-            UriTemplate = "rt_nav_data/{par_ricname}/{par_type}/{par_interval}/{par_from_date}/{par_to_date}")]
-        public async Task<Collection<NavRecord>> getRT_nav_data(string par_ricname, string par_type, string par_interval, string par_from_date, string par_to_date)
+            UriTemplate = "rt_nav_data/{api_key}/{par_ricname}/{par_type}/{par_interval}/{par_from_date}/{par_to_date}")]
+        public async Task<Collection<NavRecord>> getRT_nav_data(string api_key, string par_ricname, string par_type, string par_interval, string par_from_date, string par_to_date)
         {
+            if (api_key != REST_API_KEY)
+                return null;
+
+            barRecCollection.Clear();
+            navRecCollection.Clear();
+
+
+            /* try NAV view type */
+            dataReqCompleted = false;
+            dataReqError = false;
             int cnt = 0;
-            get_data_eikon(par_ricname.ToUpper(), par_type[0], par_interval[0], par_from_date, par_to_date);
+            no_such_view = false;
+
+            this.view_type = "NAV";
+            get_data_eikon_nav(par_ricname.ToUpper(), "NAV", par_interval[0], par_from_date, par_to_date);
 
             await Task.Run(() =>
             {
-                while (!dataReqError && !dataReqCompleted && cnt++ <= 30)
+                while (!no_such_view && !dataReqError && !dataReqCompleted && cnt++ <= 30)
                 {
                     Thread.Sleep(100);
                 }
             });
+
+            if(no_such_view)
+            {
+                /* try BID view type */
+                no_such_view = false;
+                dataReqCompleted = false;
+                dataReqError = false;
+                cnt = 0;
+
+                this.view_type = "BID";
+                get_data_eikon_nav(par_ricname.ToUpper(), "BID", par_interval[0], par_from_date, par_to_date);
+
+                await Task.Run(() =>
+                {
+                    while (!no_such_view && !dataReqError && !dataReqCompleted && cnt++ <= 30)
+                    {
+                        Thread.Sleep(100);
+                    }
+                });
+
+            }
+
+            if (no_such_view)
+            {
+                /* try TRDPRC_1 view type */
+                no_such_view = false;
+                dataReqCompleted = false;
+                dataReqError = false;
+                cnt = 0;
+
+                this.view_type = "TRDPRC_1";
+                get_data_eikon_nav(par_ricname.ToUpper(), "TRDPRC_1", par_interval[0], par_from_date, par_to_date);
+
+                await Task.Run(() =>
+                {
+                    while (!no_such_view && !dataReqError && !dataReqCompleted && cnt++ <= 30)
+                    {
+                        Thread.Sleep(100);
+                    }
+                });
+
+            }
 
             return navRecCollection;
 
@@ -116,6 +182,10 @@ namespace DailyIntervalDemo
             if (status.Error > 0)
                 dataReqError = true;
 
+            if(status.Error == RequestErrorType.NoSuchView)
+            {
+                no_such_view = true;
+            }
             //switch (status.Error)
             //{
 
@@ -145,12 +215,9 @@ namespace DailyIntervalDemo
             //}
         }
 
-        private void get_data_eikon(string str_ricname, char chr_type, char chr_interval, string par_from_date, string par_to_date)
+        private void get_data_eikon_bar(string str_ricname, char chr_interval, string par_from_date, string par_to_date)
         {
-            dataReqCompleted = false;
-            dataReqError = false;
-            barRecCollection.Clear();
-            navRecCollection.Clear();
+
 
             string format = "yyyyMMdd";
             DateTime dt_from = DateTime.ParseExact(par_from_date, format, System.Globalization.CultureInfo.InvariantCulture);
@@ -175,26 +242,67 @@ namespace DailyIntervalDemo
             bond - BID, DAILY_RETURN
             */
             //default
-            this.view_type = "TRDPRC_1";
+            this.view_type = "TRDPRC_1";           
+
+            dataRequest = DataServices.Instance.TimeSeries.SetupDataRequest(str_ricname)
+                    .From(dt_from).To(dt_to)
+                    .WithView(this.view_type)
+                    .WithInterval(interval)
+                    .OnDataReceived(this.OnRestSubscriptionBarDataReceived)
+                    .OnStatusUpdated(this.SubscriptionStatusChanged)
+                    .CreateAndSend();
+
+        }
+
+        private void get_data_eikon_nav(string str_ricname, string v_view_type, char chr_interval, string par_from_date, string par_to_date)
+        {
+
+
+            string format = "yyyyMMdd";
+            DateTime dt_from = DateTime.ParseExact(par_from_date, format, System.Globalization.CultureInfo.InvariantCulture);
+            DateTime dt_to = DateTime.ParseExact(par_to_date, format, System.Globalization.CultureInfo.InvariantCulture);
+
+            CommonInterval interval = CommonInterval.Daily;
+
+            if (chr_interval == 'd')
+                interval = CommonInterval.Daily;
+            else if (chr_interval == 'w')
+                interval = CommonInterval.Weekly;
+            else if (chr_interval == 'm')
+                interval = CommonInterval.Monthly;
+            else if (chr_interval == 'q')
+                interval = CommonInterval.Quarterly;
+            else if (chr_interval == 'y')
+                interval = CommonInterval.Yearly;
+
+            /* select the view depend on the type of security
+            equity or etf - TRCPRC_1
+            fund - NAV, TRCPRC_1
+            bond - BID, DAILY_RETURN
+            */
+            //default
+       /*     this.view_type = "TRDPRC_1";
 
             if (chr_type == 'e')
                 this.view_type = "TRDPRC_1";
             else if (chr_type == 'f')
                 this.view_type = "NAV";
             else if (chr_type == 'b')
-                this.view_type = "BID";
+                this.view_type = "BID"; */
+
+            /* try NAV, BID then TRDPRC_1 */
 
             dataRequest = DataServices.Instance.TimeSeries.SetupDataRequest(str_ricname)
                     .From(dt_from).To(dt_to)
-                    .WithView(this.view_type)
+                    .WithView(v_view_type)
                     .WithInterval(interval)
-                    .OnDataReceived(this.OnRestSubscriptionDataReceived)
+                    .OnDataReceived(this.OnRestSubscriptionNavDataReceived)
                     .OnStatusUpdated(this.SubscriptionStatusChanged)
                     .CreateAndSend();
 
         }
 
-        private void OnRestSubscriptionDataReceived(DataChunk chunk)
+        private void OnRestSubscriptionBarDataReceived(DataChunk chunk)
         {
 
             // chunk.Records provides access to a dictionary of field -> value, so that
@@ -224,22 +332,44 @@ namespace DailyIntervalDemo
                     }
                 }
             }
-            else
-            {
-                // record from BID or NAV view
-                foreach (IData record in chunk.Records)
-                {
-                    try
-                    {
-                        navRecCollection.Insert(0, new NavRecord(record));
-                    }
-                    catch
-                    {
 
-                    }
+            if (chunk.IsLast)
+            {
+                dataReqCompleted = true;
+            }
+        }
+
+        private void OnRestSubscriptionNavDataReceived(DataChunk chunk)
+        {
+
+            // chunk.Records provides access to a dictionary of field -> value, so that
+            // developpers can access values from field names and cast them in the proper type like in:
+            //                  double open = (double) chunk.Records.First()["OPEN"];
+
+            // In addition, for convenience Time Series API exposes shortcuts that allow developers 
+            // to code against strongly typed accessors. This is done through conversion methods
+            // such as ToBarRecords(), ToQuoteRecords(), ToTickRecords(), ToTradeRecords() and ToTradeAndQuoteRecords().
+            // The full dictionary is still exposed in the resulting strongly-typed classes.
+
+            // In this sample we know that records are typical "bar" records (open, close, high, low, volume) 
+            // because we ask for a daily interval. So we can use ToBarRecords() helper method:
+
+
+            // NAV - VALUE
+            // BID - CLOSE
+            // TDRPRC_1 - CLOSE
+            foreach (IBarData record in chunk.Records.ToBarRecords())
+            {
+                try
+                {
+                    navRecCollection.Insert(0, new NavRecord(record, this.view_type));
+                }
+                catch
+                {
 
                 }
             }
+         
 
             if (chunk.IsLast)
             {
@@ -248,11 +378,15 @@ namespace DailyIntervalDemo
         }
 
 
+
         [WebInvoke(Method = "GET",
         ResponseFormat = WebMessageFormat.Json,
-        UriTemplate = "rt_meta_data/{par_ricname}")]
-        public async Task<MetaDataRecord> getRT_meta_data(string par_ricname)
+        UriTemplate = "rt_meta_data/{api_key}/{par_ricname}")]
+        public async Task<MetaDataRecord> getRT_meta_data(string api_key, string par_ricname)
         {
+            if (api_key != REST_API_KEY)
+                return null;
+
             metaDataReqCompleted = false;
             metaDataReqError = false;
             int metaDataTimeOut = 0;
